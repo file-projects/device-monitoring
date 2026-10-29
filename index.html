@@ -52,6 +52,7 @@ const CATS={
   printer:{name:'Printers',cols:['Current user','Brand / model','Asset tag'],codes:['U','I','D']},
   internet:{name:'Internet',cols:['Main ISP','Backup ISP',''],codes:['U','I','D','P']}
 };
+const DESK_TAGS=[['cpu','CPU'],['monitor','Monitor'],['keyboard','Keyboard'],['mouse','Mouse'],['avr','UPS / AVR']];
 const CODE_LABEL={U:'Up',I:'Intermittent',D:'Down',P:'Payment issue'};
 const KEY='pcl-it-monitor-v1';
 
@@ -99,18 +100,18 @@ function catView(){
   <label>Site<select id="f-site">${siteOpts}</select></label>
   <label>${c.cols[0]}<input id="f-name"></label>
   <label>${c.cols[1]}<input id="f-detail"></label>
-  ${isNet?'':`<label>${c.cols[2]}<input id="f-asset"></label><label>Status<select id="f-status">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>`}
+  ${isNet?'':`${S.view==='desktop'?DESK_TAGS.map(([k,l])=>`<label>${l}<input id="f-${k}"></label>`).join(''):`<label>${c.cols[2]}<input id="f-asset"></label>`}<label>Status<select id="f-status">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>`}
   <label>Remarks<input id="f-remarks"></label>
   <button class="btn" data-act="add">Add</button></div></div>`;
 
-  h+=`<div class="card grid-wrap"><table><thead><tr><th>Site</th><th>${c.cols[0]}</th><th>${c.cols[1]}</th>${isNet?'':`<th>${c.cols[2]}</th><th>Status</th>`}<th>Remarks</th>`;
+  h+=`<div class="card grid-wrap"><table><thead><tr><th>Site</th><th>${c.cols[0]}</th><th>${c.cols[1]}</th>${isNet?'':`${S.view==='desktop'?DESK_TAGS.map(([k,l])=>`<th>${l}</th>`).join(''):`<th>${c.cols[2]}</th>`}<th>Status</th>`}<th>Remarks</th>`;
   for(let i=1;i<=nd;i++)h+=`<th data-act="dayall" data-day="${i}" title="Mark visible rows Up for this day" style="cursor:pointer">${i}</th>`;
   h+=`<th>Up%</th><th>Down%</th><th>Int%</th>${isNet?'<th>Pay%</th>':''}<th></th></tr></thead><tbody>`;
   if(!ds.length)h+=`<tr><td colspan="99" class="muted">No items yet. Add one above.</td></tr>`;
   for(const d of ds){
     const cl=cells(d.id),s=stat(d.id),pc=v=>s?s[v]+'%':'—';
     h+=`<tr><td>${esc(d.site)}</td><td>${esc(d.name)}</td><td>${esc(d.detail)}</td>`;
-    if(!isNet)h+=`<td>${esc(d.asset)}</td><td><select data-status="${d.id}">${STATUSES.map(x=>`<option ${x===d.status?'selected':''}>${x}</option>`).join('')}</select></td>`;
+    if(!isNet)h+=`${S.view==='desktop'?DESK_TAGS.map(([k])=>`<td>${esc((d.tags||{})[k])}</td>`).join(''):`<td>${esc(d.asset)}</td>`}<td><select data-status="${d.id}">${STATUSES.map(x=>`<option ${x===d.status?'selected':''}>${x}</option>`).join('')}</select></td>`;
     h+=`<td>${esc(d.remarks)}</td>`;
     for(let i=1;i<=nd;i++){const v=cl[i]||'';h+=`<td><button class="cell ${v}" data-act="cell" data-id="${d.id}" data-day="${i}">${v}</button></td>`}
     h+=`<td>${pc('U')}</td><td>${pc('D')}</td><td>${pc('I')}</td>${isNet?`<td>${pc('P')}</td>`:''}
@@ -226,7 +227,7 @@ function act(a,el){
       id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),
       cat:S.view,site:$('#f-site').value,name,
       detail:$('#f-detail').value.trim(),
-      asset:($('#f-asset')?.value||'').trim(),
+      asset:($('#f-asset')?.value||'').trim(),tags:S.view==='desktop'?Object.fromEntries(DESK_TAGS.map(([k])=>[k,($('#f-'+k)?.value||'').trim()])):undefined,
       status:$('#f-status')?.value||'Good',
       remarks:$('#f-remarks').value.trim()
     });
