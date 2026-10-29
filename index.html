@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PCL IT Monitoring</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1d2330;--muted:#6b7280;--line:#dfe3ea;--head:#1f3a5f;--up:#2e9e5b;--int:#e7b531;--down:#d64545;--pay:#3b7dd8;--off:#c9ced8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171f;--card:#1d2230;--text:#e7eaf0;--muted:#9aa3b2;--line:#2e3545;--head:#2b4c7e;--off:#3a4152}}
+:root[data-theme="dark"]{--bg:#14171f;--card:#1d2230;--text:#e7eaf0;--muted:#9aa3b2;--line:#2e3545;--head:#2b4c7e;--off:#3a4152}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+header{background:var(--head);color:#fff;padding:14px 16px;padding-top:calc(14px + env(safe-area-inset-top,0px))}
+header h1{font-size:18px;margin:0 0 2px}
+header div{font-size:12px;opacity:.85}
+nav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px}
+main{padding:0 16px 40px}
+.tab{background:var(--card);border:1px solid var(--line);color:var(--text);padding:7px 12px;border-radius:6px;cursor:pointer;font:inherit}
+.tab.on{background:var(--head);color:#fff;border-color:var(--head)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
+input,select{font:inherit;padding:6px;border:1px solid var(--line);border-radius:5px;background:var(--card);color:var(--text);min-width:110px}
+.btn{background:var(--head);color:#fff;border:0;padding:7px 12px;border-radius:5px;cursor:pointer;font:inherit}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.grid-wrap{overflow:auto;max-width:100%}
+table{border-collapse:collapse}
+th,td{border:1px solid var(--line);padding:4px 6px;text-align:left;white-space:nowrap}
+th{background:var(--bg);font-weight:600}
+.cell{width:26px;height:26px;padding:0;border:0;border-radius:3px;cursor:pointer;font-size:11px;font-weight:700;color:#fff;background:var(--off)}
+.U{background:var(--up)}.I{background:var(--int);color:#222}.D{background:var(--down)}.P{background:var(--pay)}
+.swatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle;margin-right:4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.stat{font-size:24px;font-weight:700;margin:4px 0}
+.muted{color:var(--muted);font-size:12px}
+.legend span{margin-right:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>PCL IT Monitoring</h1>
+  <div>Desktops · Laptops · Printers · Internet</div>
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<script>
+const SITES=['Head Office','Banner','Batangas','Cavite','Meta','MTH','Paco','Pasig','Taylor','Triumphus','Solid','Selecta','Prime','Cebu'];
+const STATUSES=['Good','Manageable','Down'];
+const CATS={
+  desktop:{name:'Desktops',cols:['Current user','Position / brand','Asset tag'],codes:['U','I','D']},
+  laptop:{name:'Laptops',cols:['Current user','Position / brand','Asset tag'],codes:['U','I','D']},
+  printer:{name:'Printers',cols:['Current user','Brand / model','Asset tag'],codes:['U','I','D']},
+  internet:{name:'Internet',cols:['Main ISP','Backup ISP',''],codes:['U','I','D','P']}
+};
+const CODE_LABEL={U:'Up',I:'Intermittent',D:'Down',P:'Payment issue'};
+const KEY='pcl-it-monitor-v1';
+
+let db={devices:[],log:{}};
+try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&x.devices)db=x}catch(e){}
+
+const S={view:'overview',site:'',month:(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')})()};
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}}
+function ndays(){const[y,m]=S.month.split('-').map(Number);return new Date(y,m,0).getDate()}
+function cells(id){return (db.log[S.month]&&db.log[S.month][id])||{}}
+function stat(id){
+  const v=Object.values(cells(id));if(!v.length)return null;
+  const p=k=>Math.round(100*v.filter(x=>x===k).length/v.length);
+  return{U:p('U'),D:p('D'),I:p('I'),P:p('P')};
+}
+
+function overview(){
+  let h=`<div class="card row"><label>Month<input type="month" data-change="month" value="${S.month}"></label>
+  <span class="muted">Uptime = share of recorded days marked Up, averaged across devices at each site.</span></div><div class="cards">`;
+  const all=[];
+  for(const s of SITES){
+    const ds=db.devices.filter(d=>d.cat!=='internet'&&d.site===s);
+    const st=ds.map(d=>stat(d.id)).filter(Boolean);
+    const up=st.length?Math.round(st.reduce((a,b)=>a+b.U,0)/st.length):null;
+    if(up!==null)all.push(up);
+    const down=ds.filter(d=>d.status==='Down').length;
+    h+=`<div class="card"><b>${esc(s)}</b><div class="stat">${up===null?'—':up+'%'}</div><div class="muted">${ds.length} devices · ${down} marked down</div></div>`;
+  }
+  h+=`</div><div class="card">Overall uptime: <b>${all.length?Math.round(all.reduce((a,b)=>a+b,0)/all.length)+'%':'—'}</b> <span class="muted">(${db.devices.length} items registered)</span></div>`;
+  return h;
+}
+
+function catView(){
+  const c=CATS[S.view],nd=ndays(),isNet=S.view==='internet';
+  const ds=db.devices.filter(d=>d.cat===S.view&&(!S.site||d.site===S.site))
+    .sort((a,b)=>a.site.localeCompare(b.site)||a.name.localeCompare(b.name));
+  const siteOpts=SITES.map(s=>`<option ${s===S.site?'selected':''}>${esc(s)}</option>`).join('');
+  let h=`<div class="card row"><label>Month<input type="month" data-change="month" value="${S.month}"></label>
+  <label>Site<select data-change="site"><option value="">All sites</option>${siteOpts}</select></label></div>`;
+
+  h+=`<div class="card"><b>Add ${isNet?'connection':'item'}</b><div class="row" style="margin-top:8px">
+  <label>Site<select id="f-site">${siteOpts}</select></label>
+  <label>${c.cols[0]}<input id="f-name"></label>
+  <label>${c.cols[1]}<input id="f-detail"></label>
+  ${isNet?'':`<label>${c.cols[2]}<input id="f-asset"></label><label>Status<select id="f-status">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>`}
+  <label>Remarks<input id="f-remarks"></label>
+  <button class="btn" data-act="add">Add</button></div></div>`;
+
+  h+=`<div class="card grid-wrap"><table><thead><tr><th>Site</th><th>${c.cols[0]}</th><th>${c.cols[1]}</th>${isNet?'':`<th>${c.cols[2]}</th><th>Status</th>`}<th>Remarks</th>`;
+  for(let i=1;i<=nd;i++)h+=`<th data-act="dayall" data-day="${i}" title="Mark visible rows Up for this day" style="cursor:pointer">${i}</th>`;
+  h+=`<th>Up%</th><th>Down%</th><th>Int%</th>${isNet?'<th>Pay%</th>':''}<th></th></tr></thead><tbody>`;
+  if(!ds.length)h+=`<tr><td colspan="99" class="muted">No items yet. Add one above.</td></tr>`;
+  for(const d of ds){
+    const cl=cells(d.id),s=stat(d.id),pc=v=>s?s[v]+'%':'—';
+    h+=`<tr><td>${esc(d.site)}</td><td>${esc(d.name)}</td><td>${esc(d.detail)}</td>`;
+    if(!isNet)h+=`<td>${esc(d.asset)}</td><td><select data-status="${d.id}">${STATUSES.map(x=>`<option ${x===d.status?'selected':''}>${x}</option>`).join('')}</select></td>`;
+    h+=`<td>${esc(d.remarks)}</td>`;
+    for(let i=1;i<=nd;i++){const v=cl[i]||'';h+=`<td><button class="cell ${v}" data-act="cell" data-id="${d.id}" data-day="${i}">${v}</button></td>`}
+    h+=`<td>${pc('U')}</td><td>${pc('D')}</td><td>${pc('I')}</td>${isNet?`<td>${pc('P')}</td>`:''}
+    <td><button class="btn ghost" data-act="del" data-id="${d.id}">✕</button></td></tr>`;
+  }
+  h+=`</tbody></table></div>`;
+  h+=`<div class="card legend muted">Tap a day to cycle: blank → ${c.codes.map(k=>`${k} (${CODE_LABEL[k]})`).join(' → ')} → blank. `;
+  h+=c.codes.map(k=>`<span><span class="swatch ${k}"></span>${CODE_LABEL[k]}</span>`).join('')+`</div>`;
+  return h;
+}
+
+const PMS_MONTHS=['April','May','June','July','August','September','October','November','December'];
+const PMS_SEED={
+  'Head Office':{freq:'6 mos',owner:'',status:'Done',m:{May:'Continues'}},
+  'Cavite':{freq:'6 mos',owner:'',status:'Pending',m:{}},
+  'Meta':{freq:'6 mos',owner:'',status:'',m:{July:'1st week'}},
+  'MTH':{freq:'1 yr',owner:'',status:'',m:{}},
+  'Prime':{freq:'1 yr',owner:'',status:'',m:{July:'3rd week'}},
+  'Selecta':{freq:'1 yr',owner:'',status:'',m:{June:'3rd week'}},
+  'Solid':{freq:'',owner:'',status:'',m:{}},
+  'Taylor':{freq:'6 mos',owner:'',status:'',m:{}},
+  'Paco':{freq:'6 mos',owner:'',status:'',m:{}}
+};
+function pmsData(){if(!db.pms){db.pms=JSON.parse(JSON.stringify(PMS_SEED));save()}return db.pms}
+function pmsView(){
+  const P=pmsData();
+  let h=`<div class="card grid-wrap"><table><thead><tr><th>Site</th><th>Frequency</th><th>Status</th>${PMS_MONTHS.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody>`;
+  for(const[s,r] of Object.entries(P)){
+    h+=`<tr><td>${esc(s)}</td><td><input value="${esc(r.freq)}" data-pms="${esc(s)}|freq" style="min-width:80px"></td><td><select data-pms="${esc(s)}|status">${['','Pending','Done'].map(x=>`<option value="${x}" ${x===r.status?'selected':''}>${x||'—'}</option>`).join('')}</select></td>`;
+    for(const m of PMS_MONTHS)h+=`<td><input value="${esc(r.m[m]||'')}" data-pms="${esc(s)}|m:${m}" style="min-width:90px"></td>`;
+    h+='</tr>';
+  }
+  return h+`</tbody></table></div><div class="card muted">Type the week (e.g. “1st week”) in the month each site is scheduled.</div>`;
+}
+const ACCOUNTS=[
+  ['DOTPH','Domain: enerhia.ph registry','cdromero@pcl.com.ph','2028-01-25','$264 / 5 years','Head Office'],
+  ['BLUEHOST','Domain server: Enerhia website','pclitadmin','2027-02-10','$1,670.84 / 3 years','Head Office'],
+  ['DOTPH','Domain: pcl.com.ph registry','nesio@pcl.com.ph','2033-11-30','$350 / 10 years','Head Office'],
+  ['HOSTINGER','Domain server: PCL website','nesio@pcl.com.ph','2029-04-10','5,232 / 4 yrs','Head Office'],
+  ['GITHUB','Domain server: PCL Academy & website','pclacademy@pcl.com.ph','N/A','Free','Head Office'],
+  ['MS365','Microsoft Business Plan (Basic 179 users, Premium 2)','admin@pcl.com.ph','2027-05-30','1 yr','Head Office'],
+  ['STARLINK 1','Subscription','icdulce@pcl.com.ph','25th of month','11,998/month','Solid'],
+  ['STARLINK 2','Subscription','icdulce@pcl.com.ph','','','Banner'],
+  ['DITO 1','DITO connection for GPS','jigavino@pcl.com.ph','25th of month','1,490/month','Banner'],
+  ['DITO 2','DITO connection (fast)','jigavino@pcl.com.ph','11th of month','1,490/month','Pasig'],
+  ['PLDT 1','PLDT connection for Banner','eygonzales@pcl.com.ph','25th of month','2,099/month','Banner'],
+  ['PLDT 2','PLDT connection for MTH','cbpatubo@mth.com.ph','25th of month','1,500/month','MTH'],
+  ['GLOBE','Globe connection for Banner','Mobile number on file','5th of month','2,099/month','Banner']
+];
+const CUT=[
+  ['CAPCUT','Video editing & AI voice','it611.pcl@gmail.com','','$53 / 1 year'],
+  ['GOOGLE','PCL website video mats','it611.pcl@gmail.com','',''],
+  ['CANVA PRO','Graphic designs','admin@pcl.com.ph','2026-07-01','2500 / 1 year']
+];
+function accRow(a){
+  const passed=/^\d{4}-\d{2}-\d{2}$/.test(a[3])&&new Date(a[3])<new Date();
+  return `<tr><td>${esc(a[0])}</td><td>${esc(a[1])}</td><td>${esc(a[2])}</td><td>${esc(a[3])}${passed?' <span class="D" style="padding:1px 6px;border-radius:4px;color:#fff">passed</span>':''}</td><td>${esc(a[4])}</td><td>${esc(a[5]||'')}</td></tr>`;
+}
+function accountsView(){
+  const head='<thead><tr><th>Provider</th><th>Description</th><th>Username</th><th>Expiry</th><th>Price</th><th>Owner / site</th></tr></thead>';
+  return `<div class="card grid-wrap"><b>Active subscriptions &amp; domains</b><table>${head}<tbody>${ACCOUNTS.map(accRow).join('')}</tbody></table></div><div class="card grid-wrap"><b>Cut subscriptions</b><table>${head}<tbody>${CUT.map(accRow).join('')}</tbody></table></div><div class="card muted">Passwords are not stored in this tool. Keep them in a password manager.</div>`;
+}
+function periodMonths(){
+  return S.period==='year'?Array.from({length:12},(_,i)=>S.month.slice(0,4)+'-'+String(i+1).padStart(2,'0')):[S.month];
+}
+function statFor(id,months){
+  const v=[];for(const m of months){const c=(db.log[m]&&db.log[m][id])||{};v.push(...Object.values(c))}
+  if(!v.length)return null;
+  const p=k=>Math.round(100*v.filter(x=>x===k).length/v.length);
+  return{U:p('U'),D:p('D'),I:p('I'),P:p('P')};
+}
+function reportsView(){
+  const months=periodMonths(),dev=db.devices.filter(d=>d.cat!=='internet');
+  const label=S.period==='year'?S.month.slice(0,4):S.month;
+  let h=`<div class="card row"><label>Month<input type="month" data-change="month" value="${S.month}"></label><label>Period<select data-change="period"><option value="month" ${S.period!=='year'?'selected':''}>Month</option><option value="year" ${S.period==='year'?'selected':''}>Year</option></select></label><span class="muted">Showing ${esc(label)}</span></div>`;
+  h+=`<div class="card grid-wrap"><b>Uptime by site</b><table><thead><tr><th>Site</th><th>Devices</th><th>Up</th><th>Down</th><th>Intermittent</th></tr></thead><tbody>`;
+  const alerts=[];
+  for(const s of SITES){
+    const ds=dev.filter(d=>d.site===s),st=ds.map(d=>statFor(d.id,months)).filter(Boolean);
+    const avg=k=>st.length?Math.round(st.reduce((a,b)=>a+b[k],0)/st.length)+'%':'—';
+    h+=`<tr><td>${esc(s)}</td><td>${ds.length}</td><td>${avg('U')}</td><td>${avg('D')}</td><td>${avg('I')}</td></tr>`;
+    if(st.length){const up=st.reduce((a,b)=>a+b.U,0)/st.length;if(up<80)alerts.push(`${esc(s)}: uptime ${Math.round(up)}% (below 80%)`)}
+  }
+  h+=`</tbody></table></div>`;
+  for(const d of dev)if(d.status==='Down')alerts.push(`${esc(d.site)}: ${esc(d.name)} is marked Down`);
+  for(const[s,r] of Object.entries(pmsData()))if(r.status==='Pending')alerts.push(`${esc(s)}: PMS pending`);
+  h+=`<div class="card"><b>Alerts</b>${alerts.length?'<ul>'+alerts.map(a=>`<li>${a}</li>`).join('')+'</ul>':'<div class="muted">No alerts.</div>'}</div>`;
+  return h;
+}
+function nav(){
+  const items=[['overview','Overview'],['pms','PMS plan'],['reports','Reports'],...Object.entries(CATS).map(([k,v])=>[k,v.name])];
+  $('#nav').innerHTML=items.map(([k,l])=>`<button class="tab ${S.view===k?'on':''}" data-act="view" data-v="${k}">${l}</button>`).join('');
+}
+function render(){nav();$('#main').innerHTML=S.view==='reports'?reportsView():S.view==='pms'?pmsView():S.view==='overview'?overview():catView()}
+
+function act(a,el){
+  const d=el.dataset;
+  if(a==='view'){S.view=d.v;S.site='';render()}
+  if(a==='cell'){
+    const dev=db.devices.find(x=>x.id===d.id);if(!dev)return;
+    const seq=['',...CATS[dev.cat].codes];
+    const cur=cells(d.id)[d.day]||'';
+    const nx=seq[(seq.indexOf(cur)+1)%seq.length];
+    db.log[S.month]=db.log[S.month]||{};
+    db.log[S.month][d.id]=db.log[S.month][d.id]||{};
+    if(nx)db.log[S.month][d.id][d.day]=nx;else delete db.log[S.month][d.id][d.day];
+    save();render();
+  }
+  if(a==='add'){
+    const name=$('#f-name').value.trim();
+    if(!name){alert('Enter a name or ID first.');return}
+    db.devices.push({
+      id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+      cat:S.view,site:$('#f-site').value,name,
+      detail:$('#f-detail').value.trim(),
+      asset:($('#f-asset')?.value||'').trim(),
+      status:$('#f-status')?.value||'Good',
+      remarks:$('#f-remarks').value.trim()
+    });
+    save();render();
+  }
+  if(a==='dayall'){
+    const ids=db.devices.filter(x=>x.cat===S.view&&(!S.site||x.site===S.site)).map(x=>x.id);
+    db.log[S.month]=db.log[S.month]||{};
+    for(const id of ids){db.log[S.month][id]=db.log[S.month][id]||{};if(!db.log[S.month][id][d.day])db.log[S.month][id][d.day]='U'}
+    save();render();
+  }
+  if(a==='del'){
+    if(!confirm('Remove this item and all its daily records?'))return;
+    db.devices=db.devices.filter(x=>x.id!==d.id);
+    for(const m in db.log)delete db.log[m][d.id];
+    save();render();
+  }
+}
+
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(b)act(b.dataset.act,b)});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.change==='month'){S.month=t.value||S.month;render()}
+  else if(t.dataset.change==='period'){S.period=t.value;render()}
+  else if(t.dataset.change==='site'){S.site=t.value;render()}
+  else if(t.dataset.pms){const[s,f]=t.dataset.pms.split('|');const r=pmsData()[s];if(f.startsWith('m:'))r.m[f.slice(2)]=t.value;else r[f]=t.value;save()}
+  else if(t.dataset.status){const dev=db.devices.find(x=>x.id===t.dataset.status);if(dev){dev.status=t.value;save();render()}}
+});
+
+render();
+</script>
+</body>
+</html>
